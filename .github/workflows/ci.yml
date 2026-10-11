@@ -319,6 +319,9 @@ jobs:
         if (Test-Path "data/stellarium.exe.config") {
           Copy-Item -Path "data/stellarium.exe.config" -Destination $pkgDir -Force
         }
+        if (Test-Path "util/spout2/x64/SpoutLibrary.dll") {
+          Copy-Item -Path "util/spout2/x64/SpoutLibrary.dll" -Destination $pkgDir -Force
+        }
         Write-Host "Package contents:"
         Get-ChildItem -Path $pkgDir | Select-Object Name
 
