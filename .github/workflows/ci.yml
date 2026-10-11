@@ -289,6 +289,46 @@ jobs:
       run: |
         cmake --build build --config RelWithDebInfo -j ${{env.parallel_processes}} --target install
 
+    - name: Prepare Windows package
+      shell: pwsh
+      run: |
+        $pkgDir = "${{ github.workspace }}/stellarium-package"
+        New-Item -ItemType Directory -Path $pkgDir -Force
+        
+        $binDir = "${{ github.workspace }}/stellarium-bin"
+        if (!(Test-Path $binDir)) {
+          $binDir = "${{ github.workspace }}/build/stellarium-bin"
+        }
+        Write-Host "Found install directory: $binDir"
+        
+        if (Test-Path "$binDir/bin") {
+          Copy-Item -Path "$binDir/bin/*" -Destination $pkgDir -Recurse -Force
+        }
+        if (Test-Path "$binDir/qtstuff") {
+          Copy-Item -Path "$binDir/qtstuff/*" -Destination $pkgDir -Recurse -Force
+        }
+        if (Test-Path "$binDir/share/stellarium") {
+          Copy-Item -Path "$binDir/share/stellarium/*" -Destination $pkgDir -Recurse -Force
+        }
+        Get-ChildItem -Path $binDir -Directory | Where-Object { $_.Name -notin @('bin', 'qtstuff', 'share') } | ForEach-Object {
+          Copy-Item -Path $_.FullName -Destination $pkgDir -Recurse -Force
+        }
+        if (Test-Path "data/qt.conf") {
+          Copy-Item -Path "data/qt.conf" -Destination $pkgDir -Force
+        }
+        if (Test-Path "data/stellarium.exe.config") {
+          Copy-Item -Path "data/stellarium.exe.config" -Destination $pkgDir -Force
+        }
+        Write-Host "Package contents:"
+        Get-ChildItem -Path $pkgDir | Select-Object Name
+
+    - name: Upload Windows build
+      uses: actions/upload-artifact@v7
+      if: success()
+      with:
+        name: stellarium-windows-x64
+        path: stellarium-package
+
 #    - name: Run unit tests
 #      run: |
 #        cd ${{ github.workspace }}\build
