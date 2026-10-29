@@ -1,0 +1,95 @@
+#
+# Implementation of Continuous Integration process for linux and macOS by Github actions (with extra additionals...)
+# See https://github.com/actions/runner-images
+#
+name: "Build Windows"
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  parallel_processes: 4 # A good default counts is: available Threads
+
+jobs:
+  # CI on Windows (Qt6)
+  ci-windows-qt6:
+    name: "Windows (x86_64; qt6)"
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v7
+      with:
+        persist-credentials: false
+
+    - name: Install Qt
+      uses: jurplel/install-qt-action@bcb88e3bed2e992f5f9e24c0f9e364a231d278eb # v4.4.0
+      with:
+        aqtversion: '==3.3.*'
+        version: '6.8.3'
+        host: 'windows'
+        target: 'desktop'
+        cache: true
+        arch: 'win64_msvc2022_64'
+        modules: 'qtcharts qtimageformats qtlocation qtmultimedia qtpositioning qtscxml qtsensors qtserialbus qtserialport qtvirtualkeyboard qtwebchannel qtwebengine qtwebsockets qtwebview debug_info qt5compat qtquicktimeline qtshadertools qtspeech'
+
+    # Packages should be automatically downloaded using vcpkg through the toolchain
+    - name: Configure CMake
+      env:
+        CMAKE_PREFIX_PATH: ${{env.QT_ROOT_DIR}}
+      # Choose CMakeLists.text from a specific source directory with -S.
+      # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
+      # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
+      run: |
+        cmake -B build -S "${{ github.workspace }}" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DSTELLARIUM_RELEASE_BUILD=Off -DENABLE_TESTING=On -DCMAKE_INSTALL_PREFIX=stellarium-bin -DSCM_SHOULD_ENABLE_CONVERTER=OFF -G "Visual Studio 18 2026" -A x64
+
+    - name: Build
+      # Build your program with the given configuration
+      run: |
+        cmake --build build --config RelWithDebInfo -j ${{env.parallel_processes}} --target install
+
+    - name: Prepare Windows package
+      shell: pwsh
+      run: |
+        $pkgDir = "${{ github.workspace }}/stellarium-package"
+        New-Item -ItemType Directory -Path $pkgDir -Force
+        
+        $binDir = "${{ github.workspace }}/stellarium-bin"
+        if (!(Test-Path $binDir)) {
+          $binDir = "${{ github.workspace }}/build/stellarium-bin"
+        }
+        Write-Host "Found install directory: $binDir"
+        
+        if (Test-Path "$binDir/bin") {
+          Copy-Item -Path "$binDir/bin/*" -Destination $pkgDir -Recurse -Force
+        }
+        if (Test-Path "$binDir/qtstuff") {
+          Copy-Item -Path "$binDir/qtstuff/*" -Destination $pkgDir -Recurse -Force
+        }
+        if (Test-Path "$binDir/share/stellarium") {
+          Copy-Item -Path "$binDir/share/stellarium/*" -Destination $pkgDir -Recurse -Force
+        }
+        Get-ChildItem -Path $binDir -Directory | Where-Object { $_.Name -notin @('bin', 'qtstuff', 'share') } | ForEach-Object {
+          Copy-Item -Path $_.FullName -Destination $pkgDir -Recurse -Force
+        }
+        if (Test-Path "data/qt.conf") {
+          Copy-Item -Path "data/qt.conf" -Destination $pkgDir -Force
+        }
+        if (Test-Path "data/stellarium.exe.config") {
+          Copy-Item -Path "data/stellarium.exe.config" -Destination $pkgDir -Force
+        }
+        if (Test-Path "util/spout2/x64/SpoutLibrary.dll") {
+          Copy-Item -Path "util/spout2/x64/SpoutLibrary.dll" -Destination $pkgDir -Force
+        }
+        Write-Host "Package contents:"
+        Get-ChildItem -Path $pkgDir | Select-Object Name
+
+    - name: Upload Windows build
+      uses: actions/upload-artifact@v7
+      if: success()
+      with:
+        name: stellarium-windows-x64
+        path: stellarium-package
